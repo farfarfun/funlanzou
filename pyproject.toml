@@ -17,3 +17,6 @@ build-backend = "hatchling.build"
 # `lanzou` 是废弃导入路径的兼容层（只有一个 __init__.py，转发到 funlanzou），
 # 保留到下一次破坏性版本再删除。
 packages = ["funlanzou", "lanzou"]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
