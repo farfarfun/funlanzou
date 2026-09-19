@@ -7,7 +7,25 @@ requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "牛哥", email = "farfarfun@qq.com" }]
-dependencies = []
+dependencies = [
+    "farlog>=1.1.7",
+    "funsecret>=1.4.84",
+    "requests>=2.28",
+    "requests-toolbelt>=1.0.0",
+    "urllib3>=1.26",
+]
+
+[project.optional-dependencies]
+# 图形客户端 funlanzou/gui 依赖，纯 API 场景不需要安装
+gui = [
+    "PyQt6>=6.4",
+    # funlanzou/login_assister.py 用它内嵌网页辅助登录获取 cookie；
+    # QtWebEngineWidgets/QtWebEngineCore 是独立发行的子包，PyQt6 本体不含。
+    "PyQt6-WebEngine>=6.4",
+    "keyring>=24.0",
+    "lz4>=4.0",
+    "pycryptodomex>=3.19",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -16,7 +34,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 # `lanzou` 是废弃导入路径的兼容层（只有一个 __init__.py，转发到 funlanzou），
 # 保留到下一次破坏性版本再删除。
-packages = ["funlanzou", "lanzou"]
+packages = ["src/funlanzou", "src/lanzou"]
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
