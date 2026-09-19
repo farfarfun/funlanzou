@@ -10,7 +10,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from random import shuffle, uniform
 from time import sleep
-from typing import List, Tuple
 
 import requests
 from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
@@ -58,7 +57,7 @@ def check_domains():
         except Exception:
             available_domains.remove(domain)
 
-    logger.error(f"before: {before} after: %s %s" % (len(available_domains), available_domains))
+    logger.debug(f"check_domains before={before} after={len(available_domains)} domains={available_domains}")
     if len(available_domains) == 0:
         logger.error("No available domains!!")
         raise Exception("No available domains!!")
@@ -101,7 +100,19 @@ class LanZouCloud(object):
         }
         disable_warnings(InsecureRequestWarning)  # 全局禁用 SSL 警告
 
-    def _get(self, url, **kwargs):
+    def _get(self, url: str, **kwargs) -> requests.Response | None:
+        """对 `url` 发起 GET 请求，失败时依次尝试其他可用域名。
+
+        Args:
+            url: 请求地址（域名部分可能会被替换为其他可用镜像域名）。
+            **kwargs: 透传给 `requests.Session.get` 的参数。
+
+        Returns:
+            请求成功时返回 `requests.Response`；所有域名都失败时返回 `None`。
+
+        Raises:
+            TimeoutError: 请求超时。
+        """
         for possible_url in self._all_possible_urls(url):
             try:
                 kwargs.setdefault('timeout', self._timeout)
@@ -115,7 +126,19 @@ class LanZouCloud(object):
 
         return None
 
-    def _head(self, url, **kwargs):
+    def _head(self, url: str, **kwargs) -> requests.Response | None:
+        """对 `url` 发起 HEAD 请求，失败时依次尝试其他可用域名。
+
+        Args:
+            url: 请求地址（域名部分可能会被替换为其他可用镜像域名）。
+            **kwargs: 透传给 `requests.Session.head` 的参数。
+
+        Returns:
+            请求成功时返回 `requests.Response`；所有域名都失败时返回 `None`。
+
+        Raises:
+            TimeoutError: 请求超时。
+        """
         for possible_url in self._all_possible_urls(url):
             try:
                 kwargs.setdefault('timeout', self._timeout)
@@ -129,7 +152,20 @@ class LanZouCloud(object):
 
         return None
 
-    def _post(self, url, data, **kwargs):
+    def _post(self, url: str, data: dict, **kwargs) -> requests.Response | None:
+        """对 `url` 发起 POST 请求，失败时依次尝试其他可用域名。
+
+        Args:
+            url: 请求地址（域名部分可能会被替换为其他可用镜像域名）。
+            data: POST 表单数据。
+            **kwargs: 透传给 `requests.Session.post` 的参数。
+
+        Returns:
+            请求成功时返回 `requests.Response`；所有域名都失败时返回 `None`。
+
+        Raises:
+            TimeoutError: 请求超时。
+        """
         for possible_url in self._all_possible_urls(url):
             try:
                 kwargs.setdefault('timeout', self._timeout)
@@ -150,7 +186,7 @@ class LanZouCloud(object):
             self._host_url = new_host
 
     @staticmethod
-    def _all_possible_urls(url: str) -> List[str]:
+    def _all_possible_urls(url: str) -> list[str]:
         return [url.replace('lanzoub.com', d) for d in available_domains]
 
     def set_max_size(self, max_size=100) -> int:
@@ -167,10 +203,17 @@ class LanZouCloud(object):
             return LanZouCloud.SUCCESS
         return LanZouCloud.FAILED
 
-    def login(self, username, passwd) -> int:
-        """
-        登录蓝奏云控制台[已弃用]
-        对某些用户可能有用
+    def login(self, username: str, passwd: str) -> int:
+        """登录蓝奏云控制台[已弃用]，对某些用户可能有用。
+
+        Args:
+            username: 蓝奏云账号（手机号/邮箱/用户名）。
+            passwd: 账号密码，调用方需自行从 `funsecret` 或环境变量读取，
+                本方法不做任何持久化。
+
+        Returns:
+            `LanZouCloud.SUCCESS`、`LanZouCloud.FAILED` 或
+            `LanZouCloud.NETWORK_ERROR`。
         """
         self._session.cookies.clear()
         login_data = {"task": "3", "setSessionId": "", "setToken": "", "setSig": "",
@@ -204,8 +247,6 @@ class LanZouCloud(object):
 
     def login_by_cookie(self, cookie: dict) -> int:
         """通过cookie登录"""
-        print("cookie", cookie["ylogin"])
-
         self._session.cookies.update(cookie)
         html = self._get(self._account_url)
         if not html:
@@ -310,8 +351,13 @@ class LanZouCloud(object):
                 file_list.append(RecFile(name, int(fid), ftype, size=size, time=''))
             return file_list
 
-    def get_rec_all(self):
-        """获取整理后回收站的所有信息"""
+    def get_rec_all(self) -> tuple[FileList, FolderList]:
+        """获取整理后回收站的所有信息。
+
+        Returns:
+            `(root_files, folder_list)`：根目录下未归入任何文件夹的文件列表，
+            以及包含各自文件的回收站文件夹列表。
+        """
         root_files = self.get_rec_file_list()  # 回收站根目录文件列表
         folder_list = FolderList()  # 保存整理后的文件夹列表
         for folder in self.get_rec_dir_list():  # 遍历所有子文件夹
@@ -449,7 +495,7 @@ class LanZouCloud(object):
                 ))
         return file_list
 
-    def get_dir_list(self, folder_id=-1) -> Tuple[FolderList, FolderList]:
+    def get_dir_list(self, folder_id=-1) -> tuple[FolderList, FolderList]:
         """获取子文件夹列表与全路径"""
         folder_list = FolderList()
         path_list = FolderList()
@@ -480,12 +526,13 @@ class LanZouCloud(object):
         return folder_list, path_list
 
     @property
-    def doupload_url(self):
+    def doupload_url(self) -> str:
+        """带上当前登录态 cookie 的 doupload.php 接口地址。"""
         return self._doupload_url + \
             (self._session.cookies["ylogin"] if "ylogin" in self._session.cookies else "")
 
-    def clean_ghost_folders(self):
-        """清除网盘中的幽灵文件夹"""
+    def clean_ghost_folders(self) -> None:
+        """清除网盘中的幽灵文件夹。"""
 
         # 可能有一些文件夹，网盘和回收站都看不见它，但是它确实存在，移动文件夹时才会显示
         # 如果不清理掉，不小心将文件移动进去就完蛋了
@@ -543,7 +590,7 @@ class LanZouCloud(object):
                 return FileDetail(LanZouCloud.NETWORK_ERROR, pwd=pwd, url=share_url)
 
         first_page = remove_notes(first_page.text)  # 去除网页里的注释
-        logger.error(f"get_file_info_by_url first_page={first_page}")
+        logger.debug(f"get_file_info_by_url first_page={first_page}")
         if '文件取消' in first_page or '文件不存在' in first_page:
             return FileDetail(LanZouCloud.FILE_CANCELLED, pwd=pwd, url=share_url)
 
@@ -552,12 +599,12 @@ class LanZouCloud(object):
             if len(pwd) == 0:
                 return FileDetail(LanZouCloud.LACK_PASSWORD, pwd=pwd, url=share_url)  # 没给提取码直接退出
             # data : 'action=downprocess&sign=AGZRbwEwU2IEDQU6BDRUaFc8DzxfMlRjCjTPlVkWzFSYFY7ATpWYw_c_c&p='+pwd,
-            logger.error("!!!!!!!!!!!!!!!!!!!!")
             sign = parse_sign(first_page)
             post_data = {'action': 'downprocess', 'sign': sign, 'p': pwd}
-            logger.error(f"get_file_info_by_url post_data={post_data}")
+            # 注意：post_data 含提取码，日志里不要带上 'p' 字段
+            logger.debug(f"get_file_info_by_url post_data(action/sign only)={post_data['action']}/{sign}")
             link_info = self._post(self._host_url + '/ajaxm.php', post_data)  # 保存了重定向前的链接信息和文件名
-            logger.error(f"get_file_info_by_url link_info={link_info}")
+            logger.debug(f"get_file_info_by_url link_info={link_info}")
             second_page = self._get(share_url)  # 再次请求文件分享页面，可以看见文件名，时间，大小等信息(第二页)
             if not link_info or not second_page.text:
                 return FileDetail(LanZouCloud.NETWORK_ERROR, pwd=pwd, url=share_url)
@@ -570,7 +617,7 @@ class LanZouCloud(object):
             f_desc = parse_desc(second_page)
         else:  # 文件没有设置提取码时,文件信息都暴露在分享页面上
             para = re.search(r'<iframe class=.*?src="(.+?)"', first_page).group(1)  # 提取下载页面 URL 的参数
-            logger.error(f"get_file_info_by_url else para={para}")
+            logger.debug(f"get_file_info_by_url else para={para}")
             # 文件名位置变化很多
             f_name = parse_file_name(first_page)
             f_time = parse_time(first_page)
@@ -578,14 +625,14 @@ class LanZouCloud(object):
             f_desc = parse_desc(first_page)
 
             first_page = self._get(self._host_url + para)
-            logger.error(f"get_file_info_by_url else frame_page={first_page.text}")
             if not first_page:
                 return FileDetail(LanZouCloud.NETWORK_ERROR, name=f_name, time=f_time,
                                   size=f_size, desc=f_desc, pwd=pwd, url=share_url)
+            logger.debug(f"get_file_info_by_url else frame_page={first_page.text}")
             first_page = remove_notes(first_page.text)
             sign = parse_sign(first_page)
 
-            logger.error(f"无密码 sign:{sign} shareUrl: {share_url}")
+            logger.debug(f"无密码 sign:{sign} shareUrl: {share_url}")
             post_data = {'action': 'downprocess', 'sign': sign, 'ves': 1}
             # 某些特殊情况 share_url 会出现 webpage 参数, post_data 需要更多参数
             # https://github.com/zaxtyson/LanZouCloud-API/issues/74
@@ -605,7 +652,7 @@ class LanZouCloud(object):
                 return FileDetail(LanZouCloud.NETWORK_ERROR, name=f_name, time=f_time, size=f_size, desc=f_desc,
                                   pwd=pwd, url=share_url)
             link_info = link_info.json()
-            logger.info(f"get_file_info_by_url=== link_info{link_info}")
+            logger.debug(f"get_file_info_by_url=== link_info{link_info}")
         # 这里开始获取文件直链
         if link_info['zt'] != 1:  # 返回信息异常，无法获取直链
             return FileDetail(LanZouCloud.FAILED,
@@ -763,8 +810,17 @@ class LanZouCloud(object):
                 return info.code
             return self._set_dir_info(fid, info.name, desc)
 
-    def rename_file(self, file_id, filename):
-        """允许会员重命名文件(无法修后缀名)"""
+    def rename_file(self, file_id: int, filename: str) -> int:
+        """允许会员重命名文件(无法修后缀名)。
+
+        Args:
+            file_id: 文件 id。
+            filename: 新文件名（后缀名部分会被忽略）。
+
+        Returns:
+            `LanZouCloud.SUCCESS`、`LanZouCloud.FAILED` 或
+            `LanZouCloud.NETWORK_ERROR`。
+        """
         post_data = {'task': 46, 'file_id': file_id, 'file_name': name_format(filename), 'type': 2}
         result = self._post(self.doupload_url, post_data)
         if not result:
@@ -785,7 +841,7 @@ class LanZouCloud(object):
             result.append(FolderId(folder_name, folder_id, "", ""))
         return result
 
-    def get_move_paths(self) -> List[FolderList]:
+    def get_move_paths(self) -> list[FolderList]:
         """获取所有文件夹的绝对路径(耗时长)"""
         result = []
         root = FolderList()
@@ -843,7 +899,7 @@ class LanZouCloud(object):
         self.delete_rec(folder_id, False)
         return LanZouCloud.SUCCESS
 
-    def _upload_small_file(self, task, file_path, folder_id=-1, callback=None) -> Tuple[int, int, bool]:
+    def _upload_small_file(self, task, file_path, folder_id=-1, callback=None) -> tuple[int, int, bool]:
         """绕过格式限制上传不超过 max_size 的文件"""
         if not os.path.isfile(file_path):
             return LanZouCloud.PATH_ERROR, 0, True
@@ -964,7 +1020,7 @@ class LanZouCloud(object):
         logger.debug(f"Upload finished, Delete tmp folder:{tmp_dir}")
         return LanZouCloud.SUCCESS, int(dir_id), False  # 大文件返回文件夹id
 
-    def upload_file(self, task: object, file_path, folder_id=-1, callback=None, allow_big_file=False) -> Tuple[
+    def upload_file(self, task: object, file_path, folder_id=-1, callback=None, allow_big_file=False) -> tuple[
         int, int, bool]:
         """解除限制上传文件"""
         if not os.path.isfile(file_path):
@@ -1034,13 +1090,13 @@ class LanZouCloud(object):
             return info.code
 
         resp = self._head(info.durl)
-        print("down_file_by_url ", info.durl)
+        logger.debug(f"down_file_by_url durl={info.durl}")
         if not resp:
             task.info = LanZouCloud.NETWORK_ERROR
             return LanZouCloud.NETWORK_ERROR
 
         content_length = resp.headers.get('Content-Length', None)
-        print("down_file_by_url Content-Length:", content_length)
+        logger.debug(f"down_file_by_url Content-Length={content_length}")
 
         # 对于 txt 文件, 可能出现没有 Content-Length 的情况
         # 此时文件需要下载一次才会出现 Content-Length
@@ -1063,7 +1119,7 @@ class LanZouCloud(object):
                     return LanZouCloud.FAILED
                 content_length = resp_.headers.get('Content-Length', None)
                 logger.debug(f"Content-Length: {content_length}")
-            print("down_file_by_url again Content-Length:", content_length)
+            logger.debug(f"down_file_by_url again Content-Length={content_length}")
 
         total_size = int(content_length)
 
@@ -1071,17 +1127,16 @@ class LanZouCloud(object):
             task.total_size = total_size
         #  不支持后缀文件重命名 .xxx.enc删除 .enc后缀
         rename = re.sub(r"(\.\w+)\.enc", r"\1", info.name.replace("*", "_"))  # 替换文件名中的 *
-        logger.error(f"new fileName {rename}")
+        logger.debug(f"new fileName {rename}")
         file_path = task.path + os.sep + rename
         logger.debug(f'Save file to file_path={file_path}')
         now_size = 0
         if os.path.exists(file_path):
             now_size = os.path.getsize(file_path)  # 本地已经下载的文件大小
-            print("down_file_by_url exist ", task.now_size, now_size)
+            logger.debug(f"down_file_by_url exist task.now_size={task.now_size} now_size={now_size}")
             task.now_size += now_size
             callback()
             if now_size >= total_size:
-                print("down_file_by_url exist full file ")
                 logger.debug(f'File file_path={file_path} local already exist!')
                 return LanZouCloud.SUCCESS
 
@@ -1132,7 +1187,6 @@ class LanZouCloud(object):
 
         try:
             # 获取文件需要的参数
-            logger.info("====== 获取文件需要的参数")
             html = remove_notes(html)
             lx = re.findall(r"'lx':'?(\d)'?,", html)[0]
             t = re.findall(r"var \w{6} = '(\d{10})';", html)[0]
@@ -1142,9 +1196,12 @@ class LanZouCloud(object):
             folder_name = parse_folder_name(html)
             folder_time = parse_folder_time(html)
             folder_desc = parse_folder_desc(html)
-            logger.info("====== 获取文件需要的参数", lx, t, k, folder_id, folder_name, folder_time, folder_desc)
-        except IndexError:
-            logger.error("IndexError")
+            logger.debug(
+                f"获取文件需要的参数 lx={lx} t={t} k={k} folder_id={folder_id} "
+                f"folder_name={folder_name} folder_time={folder_time} folder_desc={folder_desc}"
+            )
+        except IndexError as e:
+            logger.error(f"Parse folder page params failed, share_url={share_url}: {e}")
             return FolderDetail(LanZouCloud.FAILED)
 
         # 提取子文件夹信息(vip用户分享的文件夹可以递归包含子文件夹)
@@ -1162,20 +1219,24 @@ class LanZouCloud(object):
         files = FileList()
         while True:
             try:
+                # 注意：post_data 含目录提取码，日志里不要带上 'pwd' 字段
                 post_data = {'lx': lx, 'pg': page, 'k': k, 't': t, 'fid': folder_id, 'pwd': dir_pwd}
                 post = self._post(self._host_url + '/filemoreajax.php', data=post_data, headers=self._headers)
-                logger.info(f"====== 获取文件需要的参数 post {post.text}")
+                if not post:
+                    logger.error(f"Post filemoreajax.php failed (network error), folder_id={folder_id}, page={page}")
+                    return FolderDetail(LanZouCloud.NETWORK_ERROR)
+                logger.debug(f"filemoreajax.php post.text={post.text}")
                 if not post.text:
-                    logger.error("====!!!!!!!!!!!!")
-                    continue
+                    logger.error(f"filemoreajax.php returned empty body, folder_id={folder_id}, page={page}")
+                    return FolderDetail(LanZouCloud.FAILED)
                 resp = post.json()
-                logger.info(f"====== 获取文件需要的参数 resp {resp}")
+                logger.debug(f"filemoreajax.php resp={resp}")
             except requests.RequestException as e:
-                logger.error(e)
+                logger.error(f"Post filemoreajax.php failed: {e}")
                 return FolderDetail(LanZouCloud.NETWORK_ERROR)
             if resp['zt'] == 1:  # 成功获取一页文件信息
                 file_count = len(resp["text"])
-                logger.info("文件数量", file_count)
+                logger.debug(f"文件数量 {file_count}")
                 for f in resp["text"]:
                     name = f['name_all'].replace("&amp;", "&")
                     if "*" in name:
@@ -1224,8 +1285,15 @@ class LanZouCloud(object):
                                  folder_desc, share_url, folder_size, size_int, count)
         return FolderDetail(LanZouCloud.SUCCESS, folder=this_folder, files=files, sub_folders=sub_folders)
 
-    def get_folder_info_by_id(self, folder_id):
-        """通过 id 获取文件夹及内部文件信息"""
+    def get_folder_info_by_id(self, folder_id: int) -> "FolderDetail":
+        """通过 id 获取文件夹及内部文件信息。
+
+        Args:
+            folder_id: 文件夹 id。
+
+        Returns:
+            `FolderDetail`，失败时 `code` 字段为对应错误码。
+        """
         info = self.get_share_info(folder_id, is_file=False)
         if info.code != LanZouCloud.SUCCESS:
             return FolderDetail(info.code)
@@ -1374,7 +1442,8 @@ class LanZouCloud(object):
         return LanZouCloud.SUCCESS
 
     # ------------------------------------------------------------------------- #
-    def set_timeout(self, timeout):
+    def set_timeout(self, timeout: float) -> None:
+        """设置请求超时时间（秒）。"""
         self._timeout = timeout
 
     def get_share_info_by_url(self, f_url, pwd="") -> ShareInfo:
@@ -1420,8 +1489,13 @@ class LanZouCloud(object):
             return ShareInfo(LanZouCloud.SUCCESS, name=f_name, url=f_url, pwd=pwd, desc=f_desc, time=f_time,
                              size=f_size)
 
-    def get_user_name(self):
-        """获取用户名"""
+    def get_user_name(self) -> str | None:
+        """获取用户名。
+
+        Returns:
+            用户名字符串；未登录/解析失败返回 `None`；网络错误返回
+            `LanZouCloud.NETWORK_ERROR`（int）。
+        """
         params = {'item': 'profile', 'action': 'mypower'}
         resp = self._get(self._mydisk_url, params=params)
         if not resp:

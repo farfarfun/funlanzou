@@ -1,4 +1,12 @@
 # -*- coding: utf-8 -*-
+#
+# Vendored from https://github.com/borisbabic/browser_cookie3 (MIT License,
+# Copyright (c) Boris Babic). Retrieves browser session cookies from the
+# local machine to support the "get cookie from browser" login flow in
+# funlanzou/gui/dialogs/login.py. Kept close to upstream on purpose, so its
+# style (bare `except:` blocks for optional OS keyring backends, `print()` in
+# demo-only code) is intentionally not brought in line with the rest of this
+# repo's conventions.
 
 import base64
 import configparser

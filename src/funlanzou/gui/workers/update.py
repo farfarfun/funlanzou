@@ -46,8 +46,8 @@ class CheckUpdateWorker(QThread):
                 logger.debug("chcek update from github error")
                 try:
                     resp = requests.get(self._api_mirror).json()
-                except:
-                    logger.debug("chcek update from gitee error")
+                except (requests.RequestException, TimeoutError) as e:
+                    logger.debug(f"chcek update from gitee error: {e}")
             except Exception as e:
                 logger.error(f"CheckUpdateWorker error: e={e}")
             if resp:

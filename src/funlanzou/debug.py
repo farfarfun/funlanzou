@@ -1,13 +1,17 @@
 """
-调试日志设置，全局常量
+全局常量与 logger。
+
+注意：本模块会被纯 API 用法间接导入（`funlanzou.api.core` 等模块从这里取
+`logger`），因此这里只计算路径常量，不在 import 时创建目录或写文件——
+真正需要落盘的地方（GUI 配置读写）自己在写入前调用 `ensure_app_dir()`。
 """
 
-import logging
 import os
 
-__all__ = ['logger', 'SRC_DIR', 'CONFIG_FILE', 'DL_DIR', 'BG_IMG', 'USER_HOME']
+from farlog import getLogger
 
-LOG_TO_CONSOLE = False
+__all__ = ['logger', 'SRC_DIR', 'CONFIG_FILE', 'DL_DIR', 'BG_IMG', 'USER_HOME', 'ensure_app_dir']
+
 # 全局常量: USER_HOME, DL_DIR, SRC_DIR, BG_IMG, CONFIG_FILE
 USER_HOME = os.path.expanduser('~')
 if os.name == 'nt':  # Windows
@@ -21,27 +25,16 @@ if os.name == 'nt':  # Windows
         DL_DIR = winreg.QueryValueEx(key, downloads_guid)[0]
 else:  # Linux and MacOS ...
     root_dir = USER_HOME + os.sep + '.config' + os.sep + 'lanzou-gui'
-    if not os.path.exists(root_dir):
-        os.makedirs(root_dir)
     DL_DIR = USER_HOME + os.sep + 'Downloads'
 
 SRC_DIR = root_dir + os.sep + "resources" + os.sep
 BG_IMG = (SRC_DIR + "default_background_img.jpg").replace('\\', '/')
 CONFIG_FILE = root_dir + os.sep + 'config.pkl'
 
-# 日志设置
-log_file = root_dir + os.sep + 'debug-lanzou-gui.log'
-logger = logging.getLogger('lanzou')
-fmt_str = "%(asctime)s [%(filename)s:%(lineno)d] %(funcName)s %(levelname)s - %(message)s"
-logging.basicConfig(level=logging.ERROR,
-                    filename=log_file,
-                    filemode="a",
-                    format=fmt_str,
-                    datefmt="%Y-%m-%d %H:%M:%S")
+logger = getLogger("funlanzou")
 
-logging.getLogger("requests").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-if LOG_TO_CONSOLE:
-    console_handler = logging.StreamHandler()
-    logger.addHandler(console_handler)
+def ensure_app_dir() -> None:
+    """确保 GUI 本地配置目录存在，仅在真正需要写入配置时调用。"""
+    if not os.path.exists(root_dir):
+        os.makedirs(root_dir)

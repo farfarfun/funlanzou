@@ -49,11 +49,11 @@ def open_file(task):
 
 
 def time_table_item(data):
+    item = QStandardItem(data.time)
     try:
-        item = QStandardItem(data.time)
         item.setData(time_stamp(data.time), Qt.ItemDataRole.UserRole)
     except Exception as e:
-        print("errr", e)
+        logger.debug(f"time_table_item parse time failed, data.time={data.time!r}: {e}")
     return item
 
 
@@ -583,7 +583,6 @@ class MainWindow(Ui_MainWindow):
             name.setToolTip(tips)
             size = QStandardItem(infos.size)
             size.setData(format_size_int(infos.size), Qt.ItemDataRole.UserRole)  # 配合MyStandardItem实现正确排序
-            print("show_file_and_folder_lists dir")
             self.model_disk.appendRow([name, size, time_table_item(infos)])
         for row in range(self.model_disk.rowCount()):  # 右对齐
             self.model_disk.item(row, 1).setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -932,7 +931,6 @@ class MainWindow(Ui_MainWindow):
             name.setData(item)
             name.setToolTip("双击查看详情")
             size_ = QStandardItem(item.size)
-            print("rec time_table_item dir")
             time_ = time_table_item(item)
             # time_ = QStandardItem(item.time)
             self.model_rec.appendRow([name, size_, time_])
@@ -940,7 +938,6 @@ class MainWindow(Ui_MainWindow):
             name = QStandardItem(set_file_icon(item.name), item.name)
             name.setData(item)
             size_ = QStandardItem(item.size)
-            print("rec time_table_item")
             time_ = time_table_item(item)
             # time_ = QStandardItem(item.time)
             self.model_rec.appendRow([name, size_, time_])
@@ -1071,7 +1068,6 @@ class MainWindow(Ui_MainWindow):
             else:  # 单文件
                 name = QStandardItem(set_file_icon(infos.name), infos.name)
                 name.setData(ShareItem(item=infos))
-                print("show url dir")
                 item = time_table_item(infos)
                 self.model_share.appendRow([name, QStandardItem(infos.size), item])
                 self.model_share.setHorizontalHeaderLabels(["文件名", "大小", "时间"])
@@ -1145,8 +1141,8 @@ class MainWindow(Ui_MainWindow):
                 self._share_url_show_subfolder.deleteLater()
                 self._share_url_show_subfolder = None
                 del self._share_url_show_subfolder
-        except:
-            pass
+        except (AttributeError, RuntimeError) as e:
+            logger.debug(f"show_share_url_judge_folder error: {e}")
 
     def init_extract_share_ui(self):
         self.btn_share_select_all.setDisabled(True)
@@ -1417,8 +1413,8 @@ class MainWindow(Ui_MainWindow):
         else:
             try:
                 self.watch_clipboard = self._watch_clipboard_old
-            except:
-                pass
+            except AttributeError:
+                pass  # 尚未进入过登录界面，没有保存过旧状态
 
     def auto_extract_clipboard(self):
         if not self.watch_clipboard:

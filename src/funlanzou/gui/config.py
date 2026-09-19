@@ -1,10 +1,16 @@
+import pickle
 from pickle import load, dump
 
-from funlanzou.debug import CONFIG_FILE, DL_DIR
+from funlanzou.debug import CONFIG_FILE, DL_DIR, ensure_app_dir, logger
 
 __all__ = ['config']
 
-KEY = 152  # config 加密 key
+# 注意：这不是安全意义上的加密，只是本地 pickle 配置文件里的轻量混淆，
+# 防止密码/cookie 以明文出现。KEY 不是需要保密的凭据，不受 SPEC §9.1
+# “禁止硬编码凭据”约束；这里存的是用户在本机登录时自行输入的账号信息，
+# 不是仓库/开发者的凭据。要做到真正的安全存储需要改用操作系统 keyring，
+# 属于架构级改动，本次审计未处理，见 issue #427。
+KEY = 152  # config 混淆 key
 
 default_settings = {
     "download_threads": 3,  # 同时三个下载任务
@@ -64,6 +70,7 @@ def decrypt(ksa, s):
 
 
 def save_config(cf):
+    ensure_app_dir()
     with open(CONFIG_FILE, 'wb') as f:
         dump(cf, f)
 
@@ -223,5 +230,8 @@ class Config:
 try:
     with open(CONFIG_FILE, 'rb') as c:
         config = load(c)
-except:
+except FileNotFoundError:
+    config = Config()
+except (OSError, EOFError, pickle.UnpicklingError) as e:
+    logger.error(f"Load config file {CONFIG_FILE} failed, fall back to default: {e}")
     config = Config()

@@ -1,8 +1,11 @@
 import sys
 
-from PyQt5.QtCore import QUrl, pyqtSignal
-from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineProfile
-from PyQt5.QtWidgets import QApplication, QDialog, QVBoxLayout
+from PyQt6.QtCore import QUrl, pyqtSignal
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWebEngineCore import QWebEngineProfile
+from PyQt6.QtWidgets import QApplication, QDialog, QVBoxLayout
+
+from funlanzou.debug import logger
 
 
 class MyWebEngineView(QWebEngineView):
@@ -31,10 +34,8 @@ class MyWebEngineView(QWebEngineView):
                         l_pwd[0].value = '{}';
                     }};""".format(self._user, self._pwd)
             self.page().runJavaScript(js)
-        except:
-            pass
-        # except Exception as e:
-        #     print("Err:", e)
+        except Exception as e:
+            logger.debug(f"Auto fill login form failed: {e}")
 
     def onCookieAdd(self, cookie):
         name = cookie.name().data().decode('utf-8')
@@ -77,10 +78,13 @@ class LoginWindow(QDialog):
             cookie = self.web.get_cookie()
             if cookie:
                 if self._gui:
+                    # 该分支运行在被 pyinstaller 打包为 login_assister.exe 的场景下，
+                    # 父进程（funlanzou/gui/dialogs/login.py）通过读取子进程 stdout
+                    # 获取 cookie，这里的 print 是设计好的 IPC 输出通道，不是诊断日志。
                     try:
                         print(";".join([f'{k}={v}' for k, v in cookie.items()]), end='')
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.error(f"Write cookie to stdout failed: {e}")
                 else:
                     self.cookie.emit(cookie)
                 self.reject()

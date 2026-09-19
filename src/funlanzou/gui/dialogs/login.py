@@ -72,7 +72,7 @@ class LoginDialog(QDialog):
         self.pwd_ed.setText(self._pwd)
         try:
             text = ";".join([f'{k}={v}' for k, v in self._cookie.items()])
-        except:
+        except (AttributeError, TypeError):
             text = ''
         self.cookie_ed.setPlainText(text)
 
@@ -309,7 +309,7 @@ class LoginDialog(QDialog):
                 self._cookie = user_info[2]
                 try:
                     text = ";".join([f'{k}={v}' for k, v in self._cookie.items()])
-                except:
+                except (AttributeError, TypeError):
                     text = ''
                 self.cookie_ed.setPlainText(text)
         self._pwd = pwd
@@ -320,7 +320,7 @@ class LoginDialog(QDialog):
             try:
                 self._cookie = {kv.split("=")[0].strip(" "): kv.split("=")[1].strip(" ") for kv in cookies.split(";") if
                                 kv.strip(" ")}
-            except:
+            except (IndexError, ValueError):
                 self._cookie = None
 
     def change_cancel_btn(self):
@@ -351,7 +351,7 @@ class LoginDialog(QDialog):
                 try:
                     self._cookie = {kv.split("=")[0].strip(" "): kv.split("=")[1].strip(" ") for kv in
                                     cookie.split(";")}
-                except:
+                except (IndexError, ValueError):
                     self._cookie = None
                 if not self._cookie:
                     return None
@@ -359,8 +359,8 @@ class LoginDialog(QDialog):
                 self._config.set_infos(up_info)
                 self.clicked_ok.emit()
                 self.close()
-            except:
-                pass
+            except OSError as e:
+                logger.error(f"Run login assister {self._cookie_assister} failed: {e}")
         else:
             title = '请使用 Cookie 登录或是选择 登录辅助程序'
             msg = '没有输入 Cookie，或者没有找到登录辅助程序！\n\n' + \
