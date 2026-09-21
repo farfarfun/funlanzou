@@ -42,7 +42,6 @@ def parse_sign(html: str) -> str:
             re.search(r"sign=(\w+?)&", html)).group(1)
     if len(sign) < 20:  # 此时 sign 保存在变量里面, 变量名是 sign 匹配的字符
         sign = re.findall(r"var sasign\s*=\s*'(.{10,}?)';", html)[-1]
-    logger.debug(f"parse_sign result sign={sign}")
     return sign.replace("'", "")
 
 

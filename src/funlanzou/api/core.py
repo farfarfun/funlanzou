@@ -590,7 +590,6 @@ class LanZouCloud(object):
                 return FileDetail(LanZouCloud.NETWORK_ERROR, pwd=pwd, url=share_url)
 
         first_page = remove_notes(first_page.text)  # 去除网页里的注释
-        logger.debug(f"get_file_info_by_url first_page={first_page}")
         if '文件取消' in first_page or '文件不存在' in first_page:
             return FileDetail(LanZouCloud.FILE_CANCELLED, pwd=pwd, url=share_url)
 
@@ -602,7 +601,6 @@ class LanZouCloud(object):
             sign = parse_sign(first_page)
             post_data = {'action': 'downprocess', 'sign': sign, 'p': pwd}
             # 注意：post_data 含提取码，日志里不要带上 'p' 字段
-            logger.debug(f"get_file_info_by_url post_data(action/sign only)={post_data['action']}/{sign}")
             link_info = self._post(self._host_url + '/ajaxm.php', post_data)  # 保存了重定向前的链接信息和文件名
             logger.debug(f"get_file_info_by_url link_info={link_info}")
             second_page = self._get(share_url)  # 再次请求文件分享页面，可以看见文件名，时间，大小等信息(第二页)
@@ -628,11 +626,9 @@ class LanZouCloud(object):
             if not first_page:
                 return FileDetail(LanZouCloud.NETWORK_ERROR, name=f_name, time=f_time,
                                   size=f_size, desc=f_desc, pwd=pwd, url=share_url)
-            logger.debug(f"get_file_info_by_url else frame_page={first_page.text}")
             first_page = remove_notes(first_page.text)
             sign = parse_sign(first_page)
 
-            logger.debug(f"无密码 sign:{sign} shareUrl: {share_url}")
             post_data = {'action': 'downprocess', 'sign': sign, 'ves': 1}
             # 某些特殊情况 share_url 会出现 webpage 参数, post_data 需要更多参数
             # https://github.com/zaxtyson/LanZouCloud-API/issues/74
@@ -1502,34 +1498,3 @@ class LanZouCloud(object):
             return LanZouCloud.NETWORK_ERROR
         username = re.search(r"com/u/(\w+?)\?t2", remove_notes(resp.text))
         return username.group(1) if username else None
-
-
-if __name__ == "__main__":
-    lanzou = LanZouCloud()
-    # # 文件夹解析
-    # fileDetail = lanzou.get_folder_info_by_url("https://leon.lanzoub.com/b0d8h93hi")
-    # print(fileDetail)
-    # # fileDetail = lanzou.get_folder_info_by_url("https://leon.lanzoub.com/b0d8rnc4d", "80nl")
-    # fileDetail = lanzou.get_folder_info_by_url("https://leon.lanzoub.com/b00erfryd", "6mbu")
-    # print(fileDetail)
-    # fileDetail = lanzou.get_folder_info_by_url("https://leon.lanzoub.com/b0dazruwd",
-    #                                            "1111")
-    # print(fileDetail)
-    fileDetail = lanzou.get_folder_info_by_url("https://leon.lanzoub.com/b0d8h93hi",
-                                               "")
-    print(fileDetail)
-
-    # 文件解析
-    # 无密码文件
-    # fileDetail = lanzou.get_file_info_by_url("https://leon.lanzoub.com/iJV1f01ns1sh")
-    # print(fileDetail)
-    # fileDetail = lanzou.get_share_info_by_url("https://leon.lanzoub.com/iJV1f01ns1sh")
-    # print(fileDetail)
-    # # 有密码文件
-    # fileDetail = lanzou.get_file_info_by_url("https://leon.lanzoub.com/ij31g0jiqieb", "6666")
-    # print(fileDetail)
-    # fileDetail = lanzou.get_share_info_by_url("https://leon.lanzoub.com/ij31g0jiqieb", "6666")
-    # print(fileDetail)
-    fileDetail = lanzou.get_file_info_by_url(
-        "https://leon.lanzoub.com/iqOuv14z74pc")
-    print(fileDetail)

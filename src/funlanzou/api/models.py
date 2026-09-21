@@ -3,28 +3,31 @@
 元素类型为 namedtuple，至少拥有 name id 两个属性才能放入容器
 """
 
+from collections.abc import Callable, Iterator
+from typing import Any
+
 __all__ = ['FileList', 'FolderList']
 
 
 class ItemList:
     """具有 name, id 属性对象的列表"""
 
-    def __init__(self):
-        self._items = []
+    def __init__(self) -> None:
+        self._items: list[Any] = []
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._items)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int) -> Any:
         return self._items[index]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Any]:
         return iter(self._items)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<List {', '.join(it.__str__() for it in self)}>"
 
-    def __lt__(self, other):
+    def __lt__(self, other: 'ItemList') -> bool:
         """用于路径 List 之间排序"""
         return '/'.join(i.name for i in self) < '/'.join(i.name for i in other)
 
@@ -38,15 +41,15 @@ class ItemList:
         """所有 item 的 name 列表"""
         return [it.name for it in self]
 
-    def append(self, item):
+    def append(self, item: Any) -> None:
         """在末尾插入元素"""
         self._items.append(item)
 
-    def index(self, item):
+    def index(self, item: Any) -> int:
         """获取索引"""
         return self._items.index(item)
 
-    def insert(self, pos, item):
+    def insert(self, pos: int, item: Any) -> None:
         """指定位置插入元素"""
         self._items.insert(pos, item)
 
@@ -54,34 +57,34 @@ class ItemList:
         """清空元素"""
         self._items.clear()
 
-    def filter(self, condition) -> list:
+    def filter(self, condition: Callable[[Any], bool]) -> list[Any]:
         """筛选出满足条件的 item
         condition(item) -> True
         """
         return [it for it in self if condition(it)]
 
-    def find_by_name(self, name: str):
+    def find_by_name(self, name: str) -> Any | None:
         """使用文件名搜索(仅返回首个匹配项)"""
         for item in self:
             if name == item.name:
                 return item
         return None
 
-    def find_by_id(self, fid: int):
+    def find_by_id(self, fid: int) -> Any | None:
         """使用 id 搜索(精确)"""
         for item in self:
             if fid == item.id:
                 return item
         return None
 
-    def pop_by_id(self, fid):
+    def pop_by_id(self, fid: int) -> Any | None:
         for item in self:
             if item.id == fid:
                 self._items.remove(item)
                 return item
         return None
 
-    def update_by_id(self, fid, **kwargs):
+    def update_by_id(self, fid: int, **kwargs: Any) -> None:
         """通过 id 搜索元素并更新"""
         item = self.find_by_id(fid)
         pos = self.index(item)

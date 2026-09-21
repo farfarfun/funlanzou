@@ -132,20 +132,6 @@ def time_stamp(time_str: str) -> Union[Union[datetime, timedelta, str], Any]:
 
     return date.timestamp()
 
-
-if __name__ == '__main__':
-    print(datetime.today())
-    print(time_stamp("5 秒前"))
-    print(time_stamp("5 分钟前"))
-    print(time_stamp("5 小时前"))
-    print(time_stamp("昨天12:"))
-    print(time_stamp("昨天12:15"))
-    print(time_stamp("前天"))
-    print(time_stamp("前天 10"))
-    print(time_stamp("前天 10 : 25"))
-    print(time_stamp("5 天前"))
-
-
 def is_name_valid(filename: str) -> bool:
     """检查文件名是否允许上传"""
 
