@@ -602,7 +602,6 @@ class LanZouCloud(object):
             post_data = {'action': 'downprocess', 'sign': sign, 'p': pwd}
             # 注意：post_data 含提取码，日志里不要带上 'p' 字段
             link_info = self._post(self._host_url + '/ajaxm.php', post_data)  # 保存了重定向前的链接信息和文件名
-            logger.debug(f"get_file_info_by_url link_info={link_info}")
             second_page = self._get(share_url)  # 再次请求文件分享页面，可以看见文件名，时间，大小等信息(第二页)
             if not link_info or not second_page.text:
                 return FileDetail(LanZouCloud.NETWORK_ERROR, pwd=pwd, url=share_url)
@@ -648,7 +647,6 @@ class LanZouCloud(object):
                 return FileDetail(LanZouCloud.NETWORK_ERROR, name=f_name, time=f_time, size=f_size, desc=f_desc,
                                   pwd=pwd, url=share_url)
             link_info = link_info.json()
-            logger.debug(f"get_file_info_by_url=== link_info{link_info}")
         # 这里开始获取文件直链
         if link_info['zt'] != 1:  # 返回信息异常，无法获取直链
             return FileDetail(LanZouCloud.FAILED,
