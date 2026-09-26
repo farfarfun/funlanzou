@@ -3,7 +3,7 @@ from funlanzou.api.core import LanZouCloud
 version = '2.6.8'
 
 
-def why_error(code):
+def why_error(code: int) -> str:
     """错误原因"""
     if code == LanZouCloud.URL_INVALID:
         return '分享链接无效'

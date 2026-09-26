@@ -29,6 +29,10 @@ from Cryptodome.Util.Padding import unpad
 
 import sys
 
+from farlog import getLogger
+
+logger = getLogger("funlanzou.browser_cookie3")
+
 __doc__ = 'Load browser cookies into a cookiejar'
 
 
@@ -44,7 +48,6 @@ def create_local_copy(cookie_file):
     # check if cookie file exists
     if os.path.exists(cookie_file):
         # copy to random name in tmp folder
-        print("cookie_file", cookie_file)
         tmp_cookie_file = tempfile.NamedTemporaryFile(suffix='.sqlite').name
         with open(tmp_cookie_file, "wb") as f1, open(cookie_file, "rb") as f2:
             f1.write(f2.read())
@@ -167,15 +170,15 @@ def get_linux_pass(os_crypt_name):
             return password
     except KeyboardInterrupt:
         raise
-    except:
-        pass
+    except (OSError, RuntimeError):
+        logger.debug("Linux keyring password unavailable")
 
     try:
         return get_kde_wallet_password(os_crypt_name)
     except KeyboardInterrupt:
         raise
-    except:
-        pass
+    except (OSError, RuntimeError):
+        logger.debug("KDE wallet password unavailable")
 
     # try default peanuts password, probably won't work
     return b'peanuts'
@@ -304,7 +307,6 @@ class ChromiumBased:
     def load(self):
         """Load sqlite cookies into a cookiejar"""
         con = sqlite3.connect(self.tmp_cookie_file)
-        print("tmp_cookie_file", self.tmp_cookie_file)
         con.text_factory = text_factory
         cur = con.cursor()
         try:
@@ -779,7 +781,7 @@ class Firefox:
             json_data = json.loads(
                 open(self.session_file, 'rb').read().decode())
         except ValueError as e:
-            print('Error parsing firefox session JSON:', str(e))
+            logger.error(f"解析 Firefox session JSON 失败: {e}")
         else:
             for window in json_data.get('windows', []):
                 for cookie in window.get('cookies', []):
@@ -794,7 +796,7 @@ class Firefox:
             file_obj.read(8)
             json_data = json.loads(lz4.block.decompress(file_obj.read()))
         except ValueError as e:
-            print('Error parsing firefox session JSON LZ4:', str(e))
+            logger.error(f"解析 Firefox session JSON LZ4 失败: {e}")
         else:
             for cookie in json_data.get('cookies', []):
                 if self.domain_name == '' or self.domain_name in cookie.get('host', ''):

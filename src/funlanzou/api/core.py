@@ -45,6 +45,10 @@ available_domains = [
 executors = ThreadPoolExecutor()  # 线程数 min(32, os.cpu_count() + 4)
 
 
+class NoAvailableDomainError(RuntimeError):
+    """没有可用的蓝奏域名。"""
+
+
 def check_domains():
     before = len(available_domains)
     for domain in available_domains:
@@ -54,13 +58,13 @@ def check_domains():
             if rsp.status_code != 200:
                 available_domains.remove(domain)
 
-        except Exception:
+        except requests.RequestException:
             available_domains.remove(domain)
 
     logger.debug(f"check_domains before={before} after={len(available_domains)} domains={available_domains}")
     if len(available_domains) == 0:
         logger.error("No available domains!!")
-        raise Exception("No available domains!!")
+        raise NoAvailableDomainError("没有可用的蓝奏域名")
 
 
 #  启动时检测可用域名, 放到线程池执行,加快启动
@@ -175,7 +179,7 @@ class LanZouCloud(object):
                 logger.warning("Encountered timeout error while requesting network!")
                 raise TimeoutError
             except (ConnectionError, requests.RequestException):
-                logger.debug(f"Post to {possible_url} ({data}) failed, try another domain")
+                logger.debug(f"Post to {possible_url} failed, try another domain")
 
         return None
 
@@ -584,7 +588,7 @@ class LanZouCloud(object):
             # 若该页面进行了js加密，则进行解密，计算acw_sc__v2，并加入cookie
             acw_sc__v2 = calc_acw_sc__v2(first_page.text)
             self._session.cookies.set("acw_sc__v2", acw_sc__v2)
-            logger.debug(f"Set Cookie: acw_sc__v2={acw_sc__v2}")
+            logger.debug("已更新下载会话 Cookie")
             first_page = self._get(share_url)  # 文件分享页面(第一页)
             if not first_page:
                 return FileDetail(LanZouCloud.NETWORK_ERROR, pwd=pwd, url=share_url)
@@ -664,7 +668,10 @@ class LanZouCloud(object):
         if '网络异常' not in download_page_html:  # 没有遇到验证码
             direct_url = download_page.headers['Location']  # 重定向后的真直链
         else:  # 遇到验证码，验证后才能获取下载直链
-            logger.info(f"get_file_info_by_url=== 验证码 {download_page_html}")
+            logger.info(
+                "get_file_info_by_url=== 下载页需要验证码 "
+                f"(status={download_page.status_code})"
+            )
             file_token = re.findall("'file':'(.+?)'", download_page_html)[0]
             file_sign = re.findall("'sign':'(.+?)'", download_page_html)[0]
             check_api = 'https://vip.d0.baidupan.com/file/ajax.php'

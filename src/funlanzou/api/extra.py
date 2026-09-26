@@ -9,7 +9,7 @@ from funlanzou.debug import logger
 timeout = 2
 
 
-def get_short_url(url: str):
+def get_short_url(url: str) -> str:
     """短链接生成器"""
     headers = {'User-Agent': USER_AGENT}
     short_url = ""

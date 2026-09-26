@@ -5,7 +5,7 @@
 ## 安装
 
 ```bash
-pip install funlanzou
+uv tool install funlanzou
 ```
 
 图形客户端额外依赖 PyQt6 等，需要安装 `gui` extra：
@@ -18,6 +18,10 @@ pip install funlanzou[gui]
 
 ```python
 from funlanzou.api.core import LanZouCloud
+
+cloud = LanZouCloud()
+result = cloud.get_file_info_by_url("https://example.invalid/share", pwd="")
+print(result.code)
 ```
 
 图形客户端入口在 `src/funlanzou/gui/gui.py`。
