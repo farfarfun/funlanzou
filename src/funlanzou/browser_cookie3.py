@@ -4,9 +4,7 @@
 # Copyright (c) Boris Babic). Retrieves browser session cookies from the
 # local machine to support the "get cookie from browser" login flow in
 # funlanzou/gui/dialogs/login.py. Kept close to upstream on purpose, so its
-# style (bare `except:` blocks for optional OS keyring backends, `print()` in
-# demo-only code) is intentionally not brought in line with the rest of this
-# repo's conventions.
+# structure is intentionally kept close to upstream.
 
 import base64
 import configparser
@@ -1048,5 +1046,5 @@ if __name__ == '__main__':
 
     # print(qqbrowser(domain_name="qq.com"))
     # print(se360(domain_name="pc.woozooo.com"))
-    print(sougou(domain_name="pc.woozooo.com"))
+    logger.info("Loaded %d cookies", len(sougou(domain_name="pc.woozooo.com")))
     # print(cookie_jar)

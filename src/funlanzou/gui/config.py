@@ -1,15 +1,15 @@
+import hashlib
+import json
 import pickle
 from pickle import load, dump
+
+from funsecret import read_secret, write_secret
 
 from funlanzou.debug import CONFIG_FILE, DL_DIR, ensure_app_dir, logger
 
 __all__ = ['config']
 
-# 注意：这不是安全意义上的加密，只是本地 pickle 配置文件里的轻量混淆，
-# 防止密码/cookie 以明文出现。KEY 不是需要保密的凭据，不受 SPEC §9.1
-# “禁止硬编码凭据”约束；这里存的是用户在本机登录时自行输入的账号信息，
-# 不是仓库/开发者的凭据。要做到真正的安全存储需要改用操作系统 keyring，
-# 属于架构级改动，本次审计未处理，见 issue #427。
+# 仅用于读取并迁移旧版本配置；新凭据统一由 funsecret 管理。
 KEY = 152  # config 混淆 key
 
 default_settings = {
@@ -31,25 +31,7 @@ default_settings = {
 }
 
 
-def encrypt(key, s):
-    b = bytearray(str(s).encode("utf-8"))
-    n = len(b)
-    c = bytearray(n * 2)
-    j = 0
-    for i in range(0, n):
-        b1 = b[i]
-        b2 = b1 ^ key
-        c1 = b2 % 19
-        c2 = b2 // 19
-        c1 = c1 + 46
-        c2 = c2 + 46
-        c[j] = c1
-        c[j + 1] = c2
-        j = j + 2
-    return c.decode("utf-8")
-
-
-def decrypt(ksa, s):
+def _decrypt_legacy(s):
     c = bytearray(str(s).encode("utf-8"))
     n = len(c)
     if n % 2 != 0:
@@ -64,7 +46,7 @@ def decrypt(ksa, s):
         c1 = c1 - 46
         c2 = c2 - 46
         b2 = c2 * 19 + c1
-        b1 = b2 ^ ksa
+        b1 = b2 ^ KEY
         b[i] = b1
     return b.decode("utf-8")
 
@@ -73,6 +55,31 @@ def save_config(cf):
     ensure_app_dir()
     with open(CONFIG_FILE, 'wb') as f:
         dump(cf, f)
+
+
+def _secret_user_id(name: str) -> str:
+    return hashlib.sha256(name.encode("utf-8")).hexdigest()
+
+
+def _read_credential(name: str, kind: str):
+    if not name:
+        return None
+    value = read_secret("funlanzou", "gui", _secret_user_id(name), kind)
+    if kind == "cookie" and value:
+        try:
+            return json.loads(value)
+        except (TypeError, json.JSONDecodeError):
+            logger.error("funsecret 中保存的 Cookie 格式无效")
+            return None
+    return value
+
+
+def _write_credential(name: str, kind: str, value) -> None:
+    if not name:
+        return
+    if kind == "cookie" and value:
+        value = json.dumps(value, ensure_ascii=True)
+    write_secret(value or "", "funlanzou", "gui", _secret_user_id(name), kind)
 
 
 class Config:
@@ -85,52 +92,29 @@ class Config:
         self._pwd = ''
         self._work_id = -1
         self._settings = default_settings
-
-    @staticmethod
-    def encode(var):
-        if isinstance(var, dict):
-            for k, v in var.items():
-                var[k] = encrypt(KEY, str(v))
-        elif var:
-            var = encrypt(KEY, str(var))
-        return var
-
-    @staticmethod
-    def decode(var):
-        try:
-            if isinstance(var, dict):
-                dvar = {}  # 新开内存，否则会修改原字典
-                for k, v in var.items():
-                    dvar[k] = decrypt(KEY, str(v))
-            elif var:
-                dvar = decrypt(KEY, var)
-            else:
-                dvar = None
-        except Exception:
-            dvar = None
-        return dvar
+        self._credentials_migrated = True
 
     def update_user(self):
         if self._name:
-            self._users[self._name] = (self._cookie, self._name, self._pwd,
+            self._users[self._name] = ('', self._name, '',
                                        self._work_id, self._settings)
             save_config(self)
 
     def del_user(self, name) -> bool:
-        name = self.encode(name)
         if name in self._users:
+            _write_credential(name, "password", "")
+            _write_credential(name, "cookie", "")
             del self._users[name]
             return True
         return False
 
     def change_user(self, name) -> bool:
-        name = self.encode(name)
         if name in self._users:
             self.update_user()  # 切换用户前保持目前用户信息
             user = self._users[name]
-            self._cookie = user[0]
+            self._cookie = ''
             self._name = user[1]
-            self._pwd = user[2]
+            self._pwd = ''
             self._work_id = user[3]
             self._settings = user[4]
             save_config(self)
@@ -139,14 +123,12 @@ class Config:
 
     @property
     def users_name(self) -> list:
-        return [self.decode(user) for user in self._users]
+        return list(self._users)
 
     def get_user_info(self, name):
         """返回用户名、pwd、cookie"""
-        en_name = self.encode(name)
-        if en_name in self._users:
-            user_info = self._users[en_name]
-            return name, self.decode(user_info[2]), self.decode(user_info[0])
+        if name in self._users:
+            return name, _read_credential(name, "password"), _read_credential(name, "cookie")
 
     def default_path(self):
         path = default_settings['dl_path']
@@ -159,19 +141,20 @@ class Config:
 
     @property
     def name(self):
-        return self.decode(self._name)
+        return self._name
 
     @property
     def pwd(self):
-        return self.decode(self._pwd)
+        return _read_credential(self.name, "password")
 
     @property
     def cookie(self):
-        return self.decode(self._cookie)
+        return _read_credential(self.name, "cookie")
 
     @cookie.setter
     def cookie(self, cookie):
-        self._cookie = self.encode(cookie)
+        _write_credential(self.name, "cookie", cookie)
+        self._cookie = ''
         save_config(self)
 
     @property
@@ -184,11 +167,12 @@ class Config:
         save_config(self)
 
     def set_cookie(self, cookie):
-        self._cookie = self.encode(cookie)
+        _write_credential(self.name, "cookie", cookie)
+        self._cookie = ''
         save_config(self)
 
     def set_username(self, username):
-        self._name = self.encode(username)
+        self._name = username
         save_config(self)
 
     @property
@@ -212,11 +196,13 @@ class Config:
     def set_infos(self, infos: dict):
         self.update_user()  # 切换用户前保持目前用户信息
         if "name" in infos:
-            self._name = self.encode(infos["name"])
+            self._name = infos["name"]
         if "pwd" in infos:
-            self._pwd = self.encode(infos["pwd"])
+            _write_credential(self.name, "password", infos["pwd"])
+            self._pwd = ''
         if "cookie" in infos:
-            self._cookie = self.encode(infos["cookie"])
+            _write_credential(self.name, "cookie", infos["cookie"])
+            self._cookie = ''
         if "path" in infos:
             self._settings.update({'dl_path': infos["path"]})
         if "work_id" in infos:
@@ -225,11 +211,51 @@ class Config:
             self._settings = infos["settings"]
         save_config(self)
 
+    def migrate_credentials(self) -> bool:
+        """将旧 pickle 中的凭据迁移到 funsecret。"""
+        if getattr(self, "_credentials_migrated", False):
+            return False
+
+        changed = True
+        migrated_users = {}
+        for encoded_name, user in list(self._users.items()):
+            try:
+                name = _decrypt_legacy(encoded_name)
+                cookie = {key: _decrypt_legacy(value) for key, value in user[0].items()} if user[0] else None
+                password = _decrypt_legacy(user[2]) if user[2] else None
+            except (AttributeError, TypeError, UnicodeDecodeError, ValueError):
+                logger.error("旧版凭据配置格式无效，已跳过")
+                continue
+            if password:
+                _write_credential(name, "password", password)
+            if cookie:
+                _write_credential(name, "cookie", cookie)
+            migrated_users[name] = ('', name, '', user[3], user[4])
+
+        try:
+            name = _decrypt_legacy(self._name) if self._name else ''
+            password = _decrypt_legacy(self._pwd) if self._pwd else None
+            cookie = {key: _decrypt_legacy(value) for key, value in self._cookie.items()} if self._cookie else None
+        except (AttributeError, TypeError, UnicodeDecodeError, ValueError):
+            logger.error("旧版当前用户凭据格式无效，已跳过")
+            name = password = cookie = None
+        if password:
+            _write_credential(name, "password", password)
+        if cookie:
+            _write_credential(name, "cookie", cookie)
+        self._users = migrated_users
+        self._name = name or ''
+        self._pwd = self._cookie = ''
+        self._credentials_migrated = True
+        return changed
+
 
 # 全局配置对象
 try:
     with open(CONFIG_FILE, 'rb') as c:
         config = load(c)
+    if config.migrate_credentials():
+        save_config(config)
 except FileNotFoundError:
     config = Config()
 except (OSError, EOFError, pickle.UnpicklingError) as e:
