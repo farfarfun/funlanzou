@@ -5,7 +5,9 @@
 import os
 import pickle
 import shutil
+import threading
 import time
+import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from random import shuffle, uniform
@@ -22,7 +24,7 @@ from funlanzou.api.types import *
 from funlanzou.api.utils import *
 from funlanzou.debug import logger
 
-__all__ = ['LanZouCloud']
+__all__ = ['LanZouCloud', 'check_domains', 'refresh_available_domains']
 
 check_url = "https://www.lanzoub.com"
 available_domains = [
@@ -44,31 +46,70 @@ available_domains = [
 
 executors = ThreadPoolExecutor()  # 线程数 min(32, os.cpu_count() + 4)
 
+_domains_lock = threading.Lock()
+
+# 分页/刷新类接口返回「网络异常」或「请刷新，重试」时，同一页最多连续重试多少次。
+# 没有上限会让 get_file_list 在网络持续异常时无限循环，占满 CPU。
+_MAX_REFRESH_RETRY = 10
+
 
 class NoAvailableDomainError(RuntimeError):
     """没有可用的蓝奏域名。"""
 
 
-def check_domains() -> None:
-    before = len(available_domains)
-    for domain in available_domains:
+def check_domains(timeout: float = 5.0) -> list[str]:
+    """探测 `available_domains` 里哪些蓝奏云域名当前可用。
+
+    不修改模块级 `available_domains`，只返回探测结果；需要就地刷新请调用
+    `refresh_available_domains()`。
+
+    Args:
+        timeout: 单个域名探测请求的超时秒数。
+
+    Returns:
+        探测结果为可用的域名列表。
+
+    Raises:
+        NoAvailableDomainError: 所有候选域名都探测失败。
+    """
+    candidates = list(available_domains)
+    alive = []
+    for domain in candidates:
         req_url = check_url.replace('lanzoub.com', domain)
         try:
-            rsp = requests.head(req_url, timeout=0.1)
-            if rsp.status_code != 200:
-                available_domains.remove(domain)
+            rsp = requests.head(req_url, timeout=timeout)
+        except requests.RequestException as e:
+            logger.debug(f"域名探测失败: domain={domain} reason={type(e).__name__}")
+            continue
+        if rsp.status_code == 200:
+            alive.append(domain)
+        else:
+            logger.debug(f"域名探测失败: domain={domain} status={rsp.status_code}")
 
-        except requests.RequestException:
-            available_domains.remove(domain)
-
-    logger.debug(f"check_domains before={before} after={len(available_domains)} domains={available_domains}")
-    if len(available_domains) == 0:
-        logger.error("No available domains!!")
-        raise NoAvailableDomainError("没有可用的蓝奏域名")
+    logger.info(f"域名探测完成: 候选 {len(candidates)} 个，可用 {len(alive)} 个")
+    if not alive:
+        raise NoAvailableDomainError(f"所有候选蓝奏云域名均不可用（共探测 {len(candidates)} 个）")
+    return alive
 
 
-#  启动时检测可用域名, 放到线程池执行,加快启动
-executors.submit(check_domains)
+def refresh_available_domains(timeout: float = 5.0) -> list[str]:
+    """探测并就地刷新模块级 `available_domains`。
+
+    注意：这是**显式调用**的网络操作，import 本模块不会自动发起任何网络请求。
+
+    Args:
+        timeout: 单个域名探测请求的超时秒数。
+
+    Returns:
+        刷新后的可用域名列表。
+
+    Raises:
+        NoAvailableDomainError: 所有候选域名都探测失败，此时保留原列表不变。
+    """
+    alive = check_domains(timeout=timeout)
+    with _domains_lock:
+        available_domains[:] = alive
+    return alive
 
 
 class LanZouCloud(object):
@@ -210,6 +251,11 @@ class LanZouCloud(object):
     def login(self, username: str, passwd: str) -> int:
         """登录蓝奏云控制台[已弃用]，对某些用户可能有用。
 
+        .. deprecated::
+            官方登录页已多次改版，账号密码登录对新注册用户大多已失效；请改用
+            `login_by_cookie()`（配合 `funlanzou.login_assister` 或浏览器 Cookie
+            导出获取 Cookie）。计划在下一次破坏性版本中移除本方法。
+
         Args:
             username: 蓝奏云账号（手机号/邮箱/用户名）。
             passwd: 账号密码，调用方需自行从 `funsecret` 或环境变量读取，
@@ -219,6 +265,12 @@ class LanZouCloud(object):
             `LanZouCloud.SUCCESS`、`LanZouCloud.FAILED` 或
             `LanZouCloud.NETWORK_ERROR`。
         """
+        warnings.warn(
+            "LanZouCloud.login 已弃用，官方登录页改版后对多数账号已失效，"
+            "请改用 login_by_cookie()；计划在下一次破坏性版本中移除。",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._session.cookies.clear()
         login_data = {"task": "3", "setSessionId": "", "setToken": "", "setSig": "",
                       "setScene": "", "uid": username, "pwd": passwd}
@@ -228,11 +280,14 @@ class LanZouCloud(object):
         html = self._get(self._account_url)
         if not html:
             return LanZouCloud.NETWORK_ERROR
-        formhash = parse_form_hash(html.text)
-        if not formhash:
-            logger.error("formhash is None!")
+        try:
+            # parse_form_hash 返回的是字符串本身，不是 list；之前写成 formhash[0]
+            # 实际只取到了字符串的第一个字符，导致登录请求永远带着错误的 formhash
+            formhash = parse_form_hash(html.text)
+        except IndexError:
+            logger.error("Account page has no formhash field")
             return LanZouCloud.FAILED
-        login_data['formhash'] = formhash[0]
+        login_data['formhash'] = formhash
         html = self._post(self._mydisk_url, login_data, headers=phone_header)
         if not html:
             return LanZouCloud.NETWORK_ERROR
@@ -295,14 +350,15 @@ class LanZouCloud(object):
         all_dir_list = FolderList()  # 文件夹信息列表
         dir_name_list = []  # 文件夹名列表d
         counter = 1  # 重复计数器
-        for fid, name, size, time in dirs:
+        # 循环变量不要叫 time：会遮蔽模块级 `import time`（ruff F402）
+        for fid, name, size, time_str in dirs:
             if name in dir_name_list:  # 文件夹名前 17 个中文或 34 个英文重复
                 counter += 1
                 name = f'{name}({counter})'
             else:
                 counter = 1
             dir_name_list.append(name)
-            all_dir_list.append(RecFolder(name, int(fid), size, time, None))
+            all_dir_list.append(RecFolder(name, int(fid), size, time_str, None))
         return all_dir_list
 
     def get_rec_file_list(self, folder_id: int = -1) -> FileList:
@@ -468,15 +524,30 @@ class LanZouCloud(object):
         return LanZouCloud.SUCCESS if '还原成功' in second_page.text else LanZouCloud.FAILED
 
     def get_file_list(self, folder_id: int = -1) -> FileList:
-        """获取文件列表"""
+        """获取文件列表。
+
+        Args:
+            folder_id: 文件夹 id，`-1` 表示网盘根目录。
+
+        Returns:
+            `FileList` 容器；连续网络异常超过 `_MAX_REFRESH_RETRY` 次时放弃，
+            返回已取到的部分（可能为空）。
+        """
         page = 1
+        retry = 0
         file_list = FileList()
         while True:
             post_data = {'task': 5, 'folder_id': folder_id, 'pg': page}
             resp = self._post(self.doupload_url, post_data)
             if not resp:  # 网络异常，重试
+                # 必须有重试上限：无上限时持续网络异常会变成占满 CPU 的死循环
+                retry += 1
+                if retry > _MAX_REFRESH_RETRY:
+                    logger.error(f"获取文件列表连续 {retry} 次网络异常，放弃: page={page}")
+                    break
                 continue
             else:
+                retry = 0
                 resp = resp.json()
             if resp["info"] == 0:
                 break  # 已经拿到了全部的文件信息
@@ -535,13 +606,22 @@ class LanZouCloud(object):
         return self._doupload_url + \
             (self._session.cookies["ylogin"] if "ylogin" in self._session.cookies else "")
 
-    def clean_ghost_folders(self) -> None:
-        """清除网盘中的幽灵文件夹。"""
+    def clean_ghost_folders(self) -> int:
+        """清除网盘中的幽灵文件夹。
+
+        Returns:
+            `LanZouCloud.SUCCESS` 清理完成（包括没有幽灵文件夹的情况）；
+            `LanZouCloud.FAILED` 删除某个幽灵文件夹或清空其回收站记录失败。
+        """
 
         # 可能有一些文件夹，网盘和回收站都看不见它，但是它确实存在，移动文件夹时才会显示
         # 如果不清理掉，不小心将文件移动进去就完蛋了
         def _clean(fid):
-            for folder in self.get_dir_list(fid):
+            # get_dir_list 返回 (folder_list, path_list) 二元组；这里只要子文件夹
+            # 列表本身用于递归，直接遍历元组会把两个 FolderList 当成 folder 处理，
+            # 下面访问 folder.id 必然抛 AttributeError。
+            sub_folders, _ = self.get_dir_list(fid)
+            for folder in sub_folders:
                 real_folders.append(folder)
                 _clean(folder.id)
 
@@ -607,7 +687,8 @@ class LanZouCloud(object):
             # 注意：post_data 含提取码，日志里不要带上 'p' 字段
             link_info = self._post(self._host_url + '/ajaxm.php', post_data)  # 保存了重定向前的链接信息和文件名
             second_page = self._get(share_url)  # 再次请求文件分享页面，可以看见文件名，时间，大小等信息(第二页)
-            if not link_info or not second_page.text:
+            # 注意：second_page 为 None 时不能再访问 .text，否则会抛 AttributeError
+            if not link_info or not second_page or not second_page.text:
                 return FileDetail(LanZouCloud.NETWORK_ERROR, pwd=pwd, url=share_url)
             link_info = link_info.json()
             second_page = remove_notes(second_page.text)
@@ -1216,6 +1297,7 @@ class LanZouCloud(object):
 
         # 提取改文件夹下全部文件
         page = 1
+        retry = 0
         files = FileList()
         while True:
             try:
@@ -1255,6 +1337,7 @@ class LanZouCloud(object):
                 if file_count < 50:
                     break
                 page += 1  # 下一页
+                retry = 0
                 # 服务器请求1s限制
                 time.sleep(1)
                 continue
@@ -1263,6 +1346,11 @@ class LanZouCloud(object):
             elif resp['zt'] == 3:  # 提取码错误
                 return FolderDetail(LanZouCloud.PASSWORD_ERROR)
             elif resp["zt"] == 4:  # '请刷新，重试
+                # 服务端要求刷新重试；必须有重试上限，否则同一页会无限循环
+                retry += 1
+                if retry > _MAX_REFRESH_RETRY:
+                    logger.error(f"分享文件夹列表连续 {retry} 次被要求刷新重试，放弃: page={page}")
+                    return FolderDetail(LanZouCloud.FAILED)
                 # 避免频繁请求
                 time.sleep(0.1)
                 continue
@@ -1469,7 +1557,8 @@ class LanZouCloud(object):
             post_data = {'action': 'downprocess', 'sign': sign, 'p': pwd}
             link_info = self._post(self._host_url + '/ajaxm.php', post_data)  # 保存了重定向前的链接信息和文件名
             second_page = self._get(f_url)  # 再次请求文件分享页面，可以看见文件名，时间，大小等信息(第二页)
-            if not link_info or not second_page.text:
+            # 注意：second_page 为 None 时不能再访问 .text，否则会抛 AttributeError
+            if not link_info or not second_page or not second_page.text:
                 return ShareInfo(LanZouCloud.NETWORK_ERROR)
             second_page = second_page.text
             link_info = link_info.json()

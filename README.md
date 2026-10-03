@@ -4,14 +4,11 @@
 
 ## 安装
 
-```bash
-uv tool install funlanzou
-```
-
-图形客户端额外依赖 PyQt6 等，需要安装 `gui` extra：
+作为库使用：
 
 ```bash
-pip install funlanzou[gui]
+uv pip install funlanzou
+# 或 pip install funlanzou
 ```
 
 ## 使用
@@ -24,7 +21,25 @@ result = cloud.get_file_info_by_url("https://example.invalid/share", pwd="")
 print(result.code)
 ```
 
-图形客户端入口在 `src/funlanzou/gui/gui.py`。
+## 图形客户端
+
+图形客户端额外依赖 PyQt6 等，需要安装 `gui` extra：
+
+```bash
+uv tool install 'funlanzou[gui]'
+```
+
+安装完成后运行：
+
+```bash
+funlanzou-gui
+```
+
+也可以在已安装 `gui` extra 的环境里用模块方式直接启动：
+
+```bash
+python -m funlanzou.gui.gui
+```
 
 ## 致谢
 

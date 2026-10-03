@@ -34,7 +34,9 @@ class MyWebEngineView(QWebEngineView):
                         l_pwd[0].value = '{}';
                     }};""".format(self._user, self._pwd)
             self.page().runJavaScript(js)
-        except Exception as e:
+        except (RuntimeError, TypeError, ValueError) as e:
+            # RuntimeError: 底层 C++ 对象在页面跳转时已被 Qt 销毁；
+            # TypeError/ValueError: 账号/密码格式化为 JS 字面量失败
             logger.debug(f"Auto fill login form failed: {e}")
 
     def onCookieAdd(self, cookie):
@@ -83,7 +85,7 @@ class LoginWindow(QDialog):
                     # 获取 cookie，这里的 print 是设计好的 IPC 输出通道，不是诊断日志。
                     try:
                         print(";".join([f'{k}={v}' for k, v in cookie.items()]), end='')
-                    except Exception as e:
+                    except (OSError, UnicodeEncodeError) as e:
                         logger.error(f"Write cookie to stdout failed: {e}")
                 else:
                     self.cookie.emit(cookie)

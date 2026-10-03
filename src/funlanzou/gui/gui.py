@@ -25,7 +25,7 @@ from funlanzou.gui.ui import Ui_MainWindow
 from funlanzou.gui.workers import *
 from funlanzou.gui.workers.manager import change_size_unit
 
-__ALL__ = ['MainWindow']
+__all__ = ['MainWindow', 'main']
 
 
 def get_logo_path():
@@ -1440,3 +1440,22 @@ class MainWindow(Ui_MainWindow):
         """监听系统剪切板"""
         self.clipboard = QApplication.clipboard()
         self.clipboard.dataChanged.connect(self.auto_extract_clipboard)
+
+
+def main() -> int:
+    """启动 funlanzou 图形客户端。
+
+    对应 README 中的 `python -m funlanzou.gui.gui` 启动方式，以及
+    `[project.scripts]` 注册的 `funlanzou-gui` 命令。
+
+    Returns:
+        进程退出码（透传自 `QApplication.exec()`）。
+    """
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    return app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

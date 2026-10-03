@@ -1046,5 +1046,5 @@ if __name__ == '__main__':
 
     # print(qqbrowser(domain_name="qq.com"))
     # print(se360(domain_name="pc.woozooo.com"))
-    logger.info("Loaded %d cookies", len(sougou(domain_name="pc.woozooo.com")))
+    logger.info("Loaded {} cookies", len(sougou(domain_name="pc.woozooo.com")))
     # print(cookie_jar)

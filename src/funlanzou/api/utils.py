@@ -7,7 +7,7 @@ import pickle
 import re
 from datetime import timedelta, datetime
 from random import uniform, choices, sample, shuffle, choice
-from typing import Tuple, Union, Any
+from typing import Any
 
 import requests
 
@@ -24,6 +24,20 @@ headers = {
     # 'Referer': 'https://pan.lanzous.com',  # 可以没有
     'Accept-Language': 'zh-CN,zh;q=0.9',
 }
+
+# pickle 反序列化不可信字节串（上传时写入文件尾部的「报尾」数据）时可能抛出的异常集合
+# SPEC §8.2：不用裸 `except Exception` 吞掉所有错误
+_UNPICKLE_ERRORS = (
+    pickle.UnpicklingError,
+    AttributeError,
+    EOFError,
+    ImportError,
+    IndexError,
+    KeyError,
+    TypeError,
+    ValueError,
+    MemoryError,
+)
 
 
 def remove_notes(html: str) -> str:
@@ -68,6 +82,14 @@ def sum_files_size(files: object) -> int:
 
 
 def convert_file_size_to_str(total: int) -> str:
+    """把字节数转换成带单位的可读字符串。
+
+    Args:
+        total: 文件大小，单位字节。
+
+    Returns:
+        形如 `"12.34 M"` 的字符串，单位按大小自动选择 B/K/M/G。
+    """
     if total < 1 << 10:
         size = "{:.2f} B".format(total)
     elif total < 1 << 20:
@@ -98,7 +120,7 @@ def time_format(time_str: str) -> str:
 reg_number = re.compile(r"\d+")
 
 
-def time_stamp(time_str: str) -> Union[Union[datetime, timedelta, str], Any]:
+def time_stamp(time_str: str) -> datetime | timedelta | str | Any:
     """输出格式化时间 %Y-%m-%d"""
     numbers = reg_number.findall(time_str)
     date = datetime.today()
@@ -156,11 +178,11 @@ def is_file_url(share_url: str) -> bool:
     else:  # VIP 用户的 URL 很随意
         try:
             html = requests.get(share_url, headers=headers, verify=False).text
-            html = remove_notes(html)
-            return True if re.search(r'class="fileinfo"|id="file"|文件描述', html) else False
-        except (requests.RequestException, Exception) as e:
-            logger.error(f"Unexpected error: e={e}")
+        except requests.RequestException as e:
+            logger.error(f"请求分享链接失败: reason={type(e).__name__}: {e}")
             return False
+        html = remove_notes(html)
+        return True if re.search(r'class="fileinfo"|id="file"|文件描述', html) else False
 
 
 def is_folder_url(share_url: str) -> bool:
@@ -174,15 +196,22 @@ def is_folder_url(share_url: str) -> bool:
     else:  # VIP 用户的 URL 很随意
         try:
             html = requests.get(share_url, headers=headers).text
-            html = remove_notes(html)
-            return True if re.search(r'id="infos"', html) else False
-        except (requests.RequestException, Exception) as e:
-            logger.error(f"Unexpected error: e={e}")
+        except requests.RequestException as e:
+            logger.error(f"请求分享链接失败: reason={type(e).__name__}: {e}")
             return False
+        html = remove_notes(html)
+        return True if re.search(r'id="infos"', html) else False
 
 
-def un_serialize(data: bytes):
-    """反序列化文件信息数据"""
+def un_serialize(data: bytes) -> dict | None:
+    """反序列化上传时写入文件尾部的「报尾」文件信息数据。
+
+    Args:
+        data: 从文件尾部读出的字节串。
+
+    Returns:
+        反序列化出的字典；数据格式不符或反序列化失败时返回 `None`。
+    """
     # https://github.com/zaxtyson/LanZouCloud-API/issues/65
     is_right_format = False
     if data.startswith(b"\x80\x04") and data.endswith(b"u."):
@@ -194,15 +223,16 @@ def un_serialize(data: bytes):
         return None
     try:
         ret = pickle.loads(data)
-        if not isinstance(ret, dict):
-            return None
-        return ret
-    except Exception as e:  # 这里可能会丢奇怪的异常
-        logger.debug(f"Pickle e={e}")
+    except _UNPICKLE_ERRORS as e:
+        # pickle 对不完整/被截断的数据会抛出形态很杂的异常，这里按「数据不可信」统一降级
+        logger.debug(f"报尾反序列化失败: {type(e).__name__}: {e}")
         return None
+    if not isinstance(ret, dict):
+        return None
+    return ret
 
 
-def big_file_split(file_path: str, max_size: int = 100, start_byte: int = 0) -> Tuple[int, str]:
+def big_file_split(file_path: str, max_size: int = 100, start_byte: int = 0) -> tuple[int, str]:
     """将大文件拆分为大小、格式随机的数据块, 可指定文件起始字节位置(用于续传)
     :return 数据块文件的大小和绝对路径
     """
@@ -296,6 +326,18 @@ def auto_rename(file_path) -> str:
 
 
 def calc_acw_sc__v2(html_text: str) -> str:
+    """从反爬验证页面计算 `acw_sc__v2` Cookie 值。
+
+    蓝奏云在访问过多时会先返回一个经过 JS 混淆的页面，需要按固定算法算出
+    `acw_sc__v2` 并作为 Cookie 带上重新请求，才能拿到正常页面。
+
+    Args:
+        html_text: 反爬验证页面的 HTML 文本。
+
+    Returns:
+        计算出的 `acw_sc__v2` 值；页面里没有 `arg1` 参数时返回空字符串对应的
+        计算结果（调用方应结合页面内容判断是否需要用到这个值）。
+    """
     arg1 = re.search(r"arg1='([0-9A-Z]+)'", html_text)
     arg1 = arg1.group(1) if arg1 else ""
     acw_sc__v2 = hex_xor(unsbox(arg1), "3000176000856006061501533003690027800375")
