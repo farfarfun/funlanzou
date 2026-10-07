@@ -78,6 +78,14 @@ class ItemList:
         return None
 
     def pop_by_id(self, fid: int) -> Any | None:
+        """按文件或文件夹 ID 移除并返回首个匹配项。
+
+        Args:
+            fid: 要移除的文件或文件夹 ID。
+
+        Returns:
+            匹配并移除的元素；未找到时返回 ``None``。
+        """
         for item in self:
             if item.id == fid:
                 self._items.remove(item)

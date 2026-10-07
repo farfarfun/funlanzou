@@ -1105,7 +1105,20 @@ class LanZouCloud(object):
     def upload_file(self, task: object, file_path: str, folder_id: int = -1,
                     callback: object | None = None, allow_big_file: bool = False) -> tuple[
         int, int, bool]:
-        """解除限制上传文件"""
+        """上传单个文件，必要时将大文件拆分后上传。
+
+        Args:
+            task: 上传任务对象，上传过程中会更新其进度和状态信息。
+            file_path: 本地待上传文件的路径。
+            folder_id: 目标网盘文件夹 ID，默认为根目录。
+            callback: 上传进度变化时调用的回调函数，可为 ``None``。
+            allow_big_file: 是否允许拆分并上传超过单文件限制的文件。
+
+        Returns:
+            ``(状态码, 文件或文件夹 ID, 是否为文件)`` 元组。状态码为
+            ``SUCCESS`` 时 ID 有效；大文件上传成功时返回其所在文件夹 ID，
+            第三个值为 ``False``。
+        """
         if not os.path.isfile(file_path):
             return LanZouCloud.PATH_ERROR, 0, True
 
@@ -1160,7 +1173,18 @@ class LanZouCloud(object):
         return LanZouCloud.SUCCESS, dir_id, False
 
     def down_file_by_url(self, share_url: str, task: object, callback: object) -> int:
-        """通过分享链接下载文件(需提取码)"""
+        """通过分享链接下载单个文件，并支持从已有本地文件续传。
+
+        Args:
+            share_url: 蓝奏云文件分享链接。
+            task: 下载任务对象，需提供 ``path``、``pwd`` 等属性；下载过程中会
+                更新其大小、进度和状态信息。
+            callback: 下载进度变化时调用的回调函数。
+
+        Returns:
+            下载结果状态码。成功时返回 ``SUCCESS``；链接无效、网络异常或提取
+            直链失败时返回相应错误码，并在适用时写入 ``task.info``。
+        """
         if not is_file_url(share_url):
             task.info = LanZouCloud.URL_INVALID
             return LanZouCloud.URL_INVALID
@@ -1248,7 +1272,16 @@ class LanZouCloud(object):
         return LanZouCloud.SUCCESS
 
     def get_folder_info_by_url(self, share_url: str, dir_pwd: str = '') -> FolderDetail:
-        """获取文件夹里所有文件的信息"""
+        """获取分享文件夹及其包含文件、子文件夹的信息。
+
+        Args:
+            share_url: 蓝奏云文件夹分享链接。
+            dir_pwd: 文件夹提取码；无提取码时传入空字符串。
+
+        Returns:
+            文件夹详情对象。其 ``code`` 为 ``SUCCESS`` 时包含解析到的文件夹
+            内容；链接无效、需要提取码、网络或解析失败时包含相应错误码。
+        """
         if is_file_url(share_url):
             return FolderDetail(LanZouCloud.URL_INVALID)
         try:
