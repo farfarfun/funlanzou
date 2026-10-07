@@ -10,7 +10,7 @@
 - `pyproject.toml` 补齐运行时依赖声明（`farlog`、`funsecret`、`requests`、
   `requests-toolbelt`、`urllib3`），并新增 `gui` extra（`PyQt6`、
   `PyQt6-WebEngine`、`keyring`、`lz4`、`pycryptodomex`）隔离图形客户端依赖。
-- 提交 `uv.lock`，保证可复现构建。
+- 不再跟踪 `uv.lock`，避免将本地生成的锁文件纳入仓库。
 - README 补充安装/使用说明、第三方代码来源声明
   （`zaxtyson/LanZouCloud-API`、`borisbabic/browser_cookie3`，均为 MIT）及组织
   介绍区块。
